@@ -192,7 +192,7 @@ def center_callback(msg):
     if abs(yaw_error) < 3 and abs(pitch_error) < 3:
         print("Target centered.")
 
-    if gimbal_angle.y >= 50.0: # if gimbal pitch angle is 90 degrees
+    if gimbal_angle.y >= 90.0: # if gimbal pitch angle is 90 degrees
         pitch_pwm = 1495
         yaw_pwm = 1495
         print("downward")
@@ -209,9 +209,9 @@ def center_callback(msg):
 
     if mission_flag == 2: # go to destination
         # fix yaw angle
-        output_yaw = 1495
+        yaw_pwm = 1495
     elif mission_flag == 3: # fixed gimbal and align horizontal
-        output_picth = output_yaw = 1495  
+        picth_pwm = yaw_pwm = 1495  
 
     # Send pwm values to gimbal
     command_service(

@@ -163,6 +163,8 @@ def gps_callback(data):
     gps_msg = NavSatFix()
     gps_msg.latitude = calculated_gps_coords[0]
     gps_msg.longitude = calculated_gps_coords[1]
+    gps_msg.latitude = 35.888191
+    gps_msg.longitude = 128.6050791
     gps_msg.altitude = calculated_gps_coords[2]
     gps_msg.header.stamp = rospy.Time.now()
     gps_msg.header.frame_id = "calculated_gps_frame"

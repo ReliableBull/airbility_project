@@ -3,6 +3,7 @@
 import rospy
 from geometry_msgs.msg import Twist, PoseStamped, Point
 from mavros_msgs.msg import State
+from mavros_msgs.srv import CommandLong
 from mavros_msgs.srv import SetMode, CommandBool , SetModeRequest
 from mavros_msgs.srv import SetMode, CommandBool , SetModeRequest , SetMavFrame , SetMavFrameRequest
 from nav_msgs.msg import Odometry
@@ -113,10 +114,10 @@ class MoveDrone:
         self.yaw = None
 
         # Initialize PID Controllers
-        self.x_pid = PID(0.8, 0.00, 0.05, 1.0, -1.0, 1.0, -1.0, 0.1)
-        self.y_pid = PID(0.8, 0.00, 0.05, 1.0, -1.0, 1.0, -1.0, 0.1)
+        self.x_pid = PID(0.8, 0.00, 0.05, 2.0, -2.0, 1.0, -1.0, 0.1)
+        self.y_pid = PID(0.8, 0.00, 0.05, 2.0, -2.0, 1.0, -1.0, 0.1)
         
-        self.z_pid = PID(0.5, 0.00, 0.01, 0.5, -0.5, 1.0, -1.0, 0.1)
+        self.z_pid = PID(0.5, 0.00, 0.01, 0.1, -0.1, 1.0, -1.0, 0.1)
         self.height_pid = PID(0.2, 0.01, 0.01, 0.3, -0.3, 1.0, -1.0, 0.1)
         self.z_angular_pid = PID(0.3, 0.01, 0.03, 0.02, -0.05, 1.0, -1.0, 0.1) # only gimbal
 
@@ -128,7 +129,7 @@ class MoveDrone:
 
 
         # params
-        self.start_height =60.5 
+        self.start_height = 76 
         
         
         self.flag = 0
@@ -145,6 +146,9 @@ class MoveDrone:
         self.current_hdg=None
         self.target_hdg = None
 
+        self.command_service = rospy.ServiceProxy('/mavros/cmd/command', CommandLong)
+
+        self.servoPWM = 2000
 
         # self.t1 = threading.Thread(target=self.getHtml)
         # self.t1.start()
@@ -307,6 +311,7 @@ class MoveDrone:
         # 8 : BODYFRAME
         self.change_mav_frame(1)
         stop_cnt = 0
+        
         while not rospy.is_shutdown():
 
             if self.current_global_position is None:
@@ -355,7 +360,8 @@ class MoveDrone:
             y_output = self.y_pid.update(y_error)
 
             # z_output = 0.0
-
+            # self.current_hegiht = 10
+            # self.flag = 4
             # Align yaw
             if self.flag == 1:
                 x_output = y_output = 0.0
@@ -374,7 +380,14 @@ class MoveDrone:
                 if diff_distance < 2.0: # m
                     arrivalCnt = arrivalCnt + 1
                 else:
-                    arrivalCnt = 0.
+                    arrivalCnt = 0.0
+                
+                if self.gimbal_angle.y >=90.0:
+                    self.flag = 3
+                    self.change_mav_frame(8) # change body frame
+                    x_output = y_output = 0.0
+                    print("\033[91mApproaching the destination222. \033[0m")              
+
                 if arrivalCnt > 5:
                     print("\033[91mArrived at the destination. \033[0m")
                     self.flag = 3
@@ -382,26 +395,56 @@ class MoveDrone:
                     x_output = y_output = 0.0
                     print("\033[91mApproaching the destination. \033[0m")              
 
-            elif self.flag == 4: # Arrive at the destination
+            elif self.flag == 4 or self.flag == 5: # Arrive at the destination
                 # Align for target
                 x_output = self.x_pid_horizontal.update(self.horizontal_x_error*0.1)  # drone body frame x-axis
                 y_output = self.y_pid_horizontal.update(self.horizontal_y_error*0.1)  # drone body frame y-axis
                 
-                if abs(self.horizontal_x_error) > 10 or abs(self.horizontal_y_error > 10):
+                if abs(self.horizontal_x_error) > 11 or abs(self.horizontal_y_error > 11):
                     print("Align again")
                     height_output = 0.0
                 else:
-                    height_output = 0.5                
+                    if self.flag == 4:
+                        self.flag == 5
+                        
+                    height_output = 1.0                
 
                 y_output = -y_output
                 yaw_output = 0.0
                 # If altitude of drone is below a threshold
-                if self.current_hegiht < 15.0: # m
-                    self.flag = 5
+                if self.current_hegiht < 30.0: # m
+                    self.command_service(
+                            broadcast=False,
+                            command=183,  # MAV_CMD_DO_SET_SERVO
+                            param1=12,  # 서보 채널 (예: 9)
+                            param2=self.servoPWM,      # 원하는 PWM 값
+                            param3=0,
+                            param4=0,
+                            param5=0,
+                            param6=0,
+                            param7=0
+                        )
+                    self.command_service(
+                            broadcast=False,
+                            command=183,  # MAV_CMD_DO_SET_SERVO
+                            param1=13,  # 서보 채널 (예: 9)
+                            param2=self.servoPWM,      # 원하는 PWM 값
+                            param3=0,
+                            param4=0,
+                            param5=0,
+                            param6=0,
+                            param7=0
+                        )
+                    self.flag = 6
+                    
                     print("\033[91mFire extinguisher bomb drop. \033[0m")
+                    
             else: # DONE
                 x_output = y_output = yaw_output = 0.0
                 height_output = -0.5 # up speed
+
+
+                print("\033[91m Mission Completed. \033[0m")
             
             vel_msg = Twist()
             vel_msg.linear.x = x_output

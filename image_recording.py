@@ -22,9 +22,8 @@ height = 480
 
 # start webcam
 
-# cap = cv2.VideoCapture('/dev/video0')
-# cap = cv2.VideoCapture('rtsp://192.168.2.119:554')
-cap = cv2.VideoCapture('rtsp://192.168.2.119/live2')
+# cap = cv2.VideoCapture('/dev/video4')
+cap = cv2.VideoCapture('rtsp://192.168.2.119:554')
 # LTE
 # out = cv2.VideoWriter('appsrc ! videoconvert' + \
 #     ' ! x264enc speed-preset=ultrafast bitrate=600 key-int-max=40' + \
@@ -36,17 +35,17 @@ cap = cv2.VideoCapture('rtsp://192.168.2.119/live2')
 #     ' ! rtspclientsink location=rtsp://127.0.0.1:8554/drone protocols=tcp',
 #     cv2.CAP_GSTREAMER, 0, fps, (640, 480), True)
 
-# out = cv2.VideoWriter('appsrc ! videoconvert' + \
-#     ' ! video/x-raw, format=BGRx' + \
-#     ' ! nvvidconv' + \
-#     ' ! video/x-raw(memory:NVMM), format=NV12' + \
-#     ' ! nvv4l2h264enc bitrate=16000000 preset-level=1 insert-sps-pps=true qp-range=15,30:20,35:25,40' + \
-#     ' ! h264parse' + \
-#     ' ! rtspclientsink location=rtsp://118.67.132.33:8554/mystream protocols=tcp',
-#     cv2.CAP_GSTREAMER, 0, fps, (width, height), True)
+out = cv2.VideoWriter('appsrc ! videoconvert' + \
+    ' ! video/x-raw, format=BGRx' + \
+    ' ! nvvidconv' + \
+    ' ! video/x-raw(memory:NVMM), format=NV12' + \
+    ' ! nvv4l2h264enc bitrate=16000000 preset-level=1 insert-sps-pps=true qp-range=15,30:20,35:25,40' + \
+    ' ! h264parse' + \
+    ' ! rtspclientsink location=rtsp://118.67.132.33:8554/mystream protocols=tcp',
+    cv2.CAP_GSTREAMER, 0, fps, (width, height), True)
 
-# if not out.isOpened():
-#     raise Exception("can't open video writer")
+if not out.isOpened():
+    raise Exception("can't open video writer")
 
 
 rospy.init_node('image_info')
@@ -57,6 +56,7 @@ pub = rospy.Publisher('center_of_image', Point, queue_size=10)
 
 while not rospy.is_shutdown():
     success, img = cap.read()
+    img = cv2.resize(img,(width,height))
     cv_image = cv2.resize(img, (width, height))
     # print(img.shape)
             # 알고리즘 시작 시점
@@ -110,12 +110,12 @@ while not rospy.is_shutdown():
         point_msg.z = -1    
     
     pub.publish(point_msg)
-    cv2.imshow('frame', cv_image)
-    # out.write(cv_image)
+    #cv2.imshow('frame', cv_image)
+    out.write(img)
     
 
-    if cv2.waitKey(1) == ord('q'):
-       break
+    #if cv2.waitKey(1) == ord('q'):
+    #    break
 
 cap.release()
 cv2.destroyAllWindows()
