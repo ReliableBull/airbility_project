@@ -45,17 +45,12 @@ out = cv2.VideoWriter('appsrc ! videoconvert' + \
     cv2.CAP_GSTREAMER, 0, fps, (width, height), True)
 
 if not out.isOpened():
-    raise Exception("can't open video writer")
-
+     raise Exception("can't open video writer")
 
 
 rospy.init_node('image_info')
 
-
-
-
 rate = rospy.Rate(50)
-
 
 pub = rospy.Publisher('center_of_image', Point, queue_size=10)
 
@@ -100,7 +95,7 @@ while not rospy.is_shutdown():
             centerX = int(M["m10"] / M["m00"])
             centerY = int(M["m01"] / M["m00"])
             cv2.circle(cv_image, (centerX, centerY), 1, (255, 0, 0), -1)
-            rospy.loginfo(f"빨간색 영역의 중심: ({centerX}, {centerY})")
+            # rospy.loginfo(f"빨간색 영역의 중심: ({centerX}, {centerY})")
             point_msg.x = centerX
             point_msg.y = centerY
             point_msg.z = 1  # 감지된 상태를 나타내기 위해 z를 1로 설정
@@ -114,12 +109,12 @@ while not rospy.is_shutdown():
         point_msg.z = -1    
     
     pub.publish(point_msg)
-    cv2.imshow('frame', cv_image)
-    # out.write(img)
+    #cv2.imshow('frame', cv_image)
+    out.write(cv_image)
     
 
-    if cv2.waitKey(1) == ord('q'):
-        break
+   # if cv2.waitKey(1) == ord('q'):
+    #   break
 
 cap.release()
 cv2.destroyAllWindows()

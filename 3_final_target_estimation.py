@@ -14,18 +14,27 @@ yaw = 0.0
 fixed_camera_pitch = 20.0
 
 # 지역 지면 고도 (해발 고도)
-local_ground_altitude = 535.0
+local_ground_altitude = 69.06
 
 # 타겟의 실제 GPS 좌표 (위도, 경도)
-target_lat = 47.3977416
-target_lon = 8.545659
+target_lat = 35.8883717
+target_lon = 128.6053578
 
+# [[515.67110716   0.         331.92905909]
+#  [  0.         686.30394649 244.35233097]
+#  [  0.           0.           1.        ]]
 # 카메라 매트릭스 파라미터 (내적 매트릭스)
+#K = np.array([
+#     [205.46963709898583, 0.0, 320.5],
+#     [0.0, 205.46963709898583, 240.5],
+#     [0.0, 0.0, 1.0]
+# ])
+
 K = np.array([
-    [205.46963709898583, 0.0, 320.5],
-    [0.0, 205.46963709898583, 240.5],
-    [0.0, 0.0, 1.0]
-])
+    [515.67110716,  0.0,         331.92905909],
+ [  0.0,         686.30394649, 244.35233097],
+ [  0.0,           0.0,           1.0        ]
+ ])
 
 gimbal_angle = Point()
 gimbal_angle.z = -1
@@ -73,7 +82,7 @@ def calculate_world_coords(yaw, ground_distance):
     """
     Yaw 및 지면 거리 정보를 사용하여 ENU 좌표계를 기준으로 월드 좌표를 계산합니다.
     """
-    current_gimbal_yaw = gimbal_angle.x
+    current_gimbal_yaw = gimbal_angle.z #gimbal yaw
     yaw_rad = np.deg2rad(yaw + current_gimbal_yaw)
 
     # ENU 좌표계에서의 월드 좌표계 변환
@@ -162,7 +171,7 @@ def gps_callback(data):
 def callBackGimbalAngle(data):
     global gimbal_angle
     gimbal_angle = data
-    print(gimbal_angle)
+    #print("gimbal",gimbal_angle)
 
 def gps_calculator_node():
     global gps_pub
@@ -173,7 +182,8 @@ def gps_calculator_node():
 
     rospy.Subscriber("/mavros/global_position/global", NavSatFix, gps_callback)
     rospy.Subscriber("/mavros/global_position/compass_hdg", Float64, compass_callback)
-    rospy.Subscriber("/angle_of_gimbal", Point, callBackGimbalAngle)
+    # rospy.Subscriber("/angle_of_gimbal", Point, callBackGimbalAngle)
+    rospy.Subscriber("/encoder_angles", Point, callBackGimbalAngle)
 
     rospy.spin()
 

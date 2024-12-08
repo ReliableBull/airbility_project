@@ -6,7 +6,7 @@ from mavros_msgs.msg import State
 from mavros_msgs.srv import SetMode, CommandBool , SetModeRequest
 from mavros_msgs.srv import SetMode, CommandBool , SetModeRequest , SetMavFrame , SetMavFrameRequest
 from nav_msgs.msg import Odometry
-from std_msgs.msg import Float32
+from std_msgs.msg import Float32, Float64
 from sensor_msgs.msg import NavSatFix
 import tf.transformations
 import threading, requests, time
@@ -71,6 +71,7 @@ class MoveDrone:
         rospy.Subscriber('/mavros/local_position/pose', PoseStamped, self.pose_callback)
         rospy.Subscriber('/estimation_gps', NavSatFix, self.target_gps_callback)
         # rospy.Subscriber('/mavros/global_position/global', NavSatFix, self.pose_callback)
+        rospy.Subscriber('/mavros/global_position/compass_hdg', Float64, self.sub_compass_hdg)
         # Initialize ROS Publisher
         self.vel_pub = rospy.Publisher('/mavros/setpoint_velocity/cmd_vel_unstamped', Twist, queue_size=10)
         self.alt_pub = rospy.Publisher('/mavros/setpoint_position/rel_alt', Float32, queue_size=10)
@@ -113,22 +114,22 @@ class MoveDrone:
         self.yaw = None
 
         # Initialize PID Controllers
-        self.x_pid = PID(0.8, 0.00, 0.05, 2.0, -2.0, 1.0, -1.0, 0.1)
-        self.y_pid = PID(0.8, 0.00, 0.05, 2.0, -2.0, 1.0, -1.0, 0.1)
+        self.x_pid = PID(0.8, 0.00, 0.05, 1.0, -1.0, 1.0, -1.0, 0.1)
+        self.y_pid = PID(0.8, 0.00, 0.05, 1.0, -1.0, 1.0, -1.0, 0.1)
         
         self.z_pid = PID(0.5, 0.00, 0.01, 0.5, -0.5, 1.0, -1.0, 0.1)
         self.height_pid = PID(0.2, 0.01, 0.01, 0.3, -0.3, 1.0, -1.0, 0.1)
-        self.z_angular_pid = PID(0.2, 0.01, 0.03, 1.0, -1.0, 1.0, -1.0, 0.1) # only gimbal
+        self.z_angular_pid = PID(0.3, 0.01, 0.03, 0.02, -0.05, 1.0, -1.0, 0.1) # only gimbal
 
         # horizontal PID controllers
-        self.x_pid_horizontal = PID(0.03, 0.00, 0.001, 0.5, -0.5, 1.0, -1.0, 0.1)
-        self.y_pid_horizontal = PID(0.03, 0.00, 0.001, 0.5, -0.5, 1.0, -1.0, 0.1)
+        self.x_pid_horizontal = PID(0.03, 0.00, 0.001, 0.25, -0.25, 1.0, -1.0, 0.1)
+        self.y_pid_horizontal = PID(0.03, 0.00, 0.001, 0.25, -0.25, 1.0, -1.0, 0.1)
         self.height_pid_horizontal = PID(0.5, 0.00, 0.01, 1.0, -1.0, 1.0, -1.0, 0.1)
 
 
 
         # params
-        self.start_height = 535
+        self.start_height =60.5 
         
         
         self.flag = 0
@@ -142,6 +143,9 @@ class MoveDrone:
         
         self.current_hegiht = None
 
+        self.current_hdg=None
+        self.target_hdg = None
+
 
         # self.t1 = threading.Thread(target=self.getHtml)
         # self.t1.start()
@@ -153,6 +157,9 @@ class MoveDrone:
     #     #           data.pose.position.y, 
     #     #           data.pose.position.z)
     #     self.current_hegiht = data.pose.position.z
+
+    def sub_compass_hdg(self, msg):
+        self.current_hdg = msg.data
 
     def center_callback(self, msg):
         image_width = 640
@@ -295,6 +302,8 @@ class MoveDrone:
         self.flag = 1
         alignYawCnt = 0
         arrivalCnt = 0
+        # 1: global
+        # 8 : BODYFRAME
         self.change_mav_frame(1)
 
         while not rospy.is_shutdown():
@@ -306,19 +315,19 @@ class MoveDrone:
             # if self.current_pose is None:
             #     rospy.loginfo("Waiting for pose update...")
             #     continue
-
+            
             if self.current_global_position is None:
                 rospy.loginfo("Waiting for global position update...")
                 continue
-
+            
             if self.target_lat is None:
                 rospy.loginfo("Waiting for target position update...")
                 continue
             
-
+            
             # To do
-            current_gimbal_yaw = self.gimbal_angle.x
-            current_gimbal_pitch = self.gimbal_angle.y
+            current_gimbal_yaw = self.gimbal_angle.z # yaw
+            current_gimbal_pitch = self.gimbal_angle.y # pitch
 
             yaw_error = abs(current_gimbal_yaw)
             yaw_output = self.z_angular_pid.update(yaw_error*0.1)
@@ -412,14 +421,15 @@ class MoveDrone:
             # self.flag = 3
             # align yaw
             if self.flag == 1:
-                x_output = y_output = 0.0
+                # self.flag =2
+                #x_output = y_output = 0.0
                 
                 if current_gimbal_yaw != 0.0 and abs(current_gimbal_yaw) < 1.0:
                     alignYawCnt = alignYawCnt + 1
                 else:
                     alignYawCnt = 0.0
 
-                if alignYawCnt > 20:
+                if alignYawCnt > 5:
                     self.flag = 2
                     print("\033[91mDrone yaw alignment complete. \033[0m")
                     print("\033[91mGo to the destination. \033[0m")
@@ -427,12 +437,12 @@ class MoveDrone:
                     
             elif self.flag == 2: # go to destination
                 yaw_output = 0.0
-                if diff_distance < 1.0:
+                if diff_distance < 2.0:
                     arrivalCnt = arrivalCnt + 1
                 else:
                     arrivalCnt = 0.0
                 
-                if arrivalCnt > 20:
+                if arrivalCnt > 10:
                     print("\033[91mArrived at the destination. \033[0m")
                     self.flag = 3
                     self.change_mav_frame(8)
@@ -464,7 +474,7 @@ class MoveDrone:
                     # print("\033[91mFire extinguisher bomb drop. \033[0m")
             else: # DONE
                 x_output = y_output = yaw_output = 0.0
-                height_output = -2.0
+                height_output = -1.0 # down speed
 
 
 
@@ -477,17 +487,22 @@ class MoveDrone:
             #print(z_output)
             #print(x_output , y_output)
             # Publish Velocity
+            x_output = y_output = 0.0            
             vel_msg = Twist()
             vel_msg.linear.x = x_output
             vel_msg.linear.y = y_output
             # vel_msg.linear.x = 0.0
             # vel_msg.linear.y = 0.0
+            # vel_msg.linear.z = 0.0
             vel_msg.linear.z = -height_output
             vel_msg.angular.x = 0.0
             vel_msg.angular.y = 0.0
+            # vel_msg.angular.z = 0.0
             vel_msg.angular.z = yaw_output
-
-            # print(vel_msg)
+            # vel_msg.angular.z = 0.2
+            # + : left
+            # - : right
+            print(vel_msg)
             self.vel_pub.publish(vel_msg)
                 # 파일 닫기
             # f.close()
