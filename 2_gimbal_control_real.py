@@ -106,9 +106,20 @@ gimbal_pitch_pid = PID(2.5, 0.00, 0.2, 1000.0, -1000.0, 1.0, -1.0, 0.1) # with v
 gimbal_yaw_pid = PID(2.3, 0.00, 0.1, 1000.0, -1000.0, 1.0, -1.0, 0.1) # with vision
 detect_flag= -1
 gimbal_angle_pub = rospy.Publisher("/angle_of_gimbal", Point,queue_size=10)
+mission_flag = -1 # mission flag
+# command_flag = -1 # command flag
 
+# command_to_gimbal_pub = rospy.Publisher("/angle_of_gimbal", Int32, queue_size=10)
 
+def mission_callback(msg):
+    global mission_flag
+    mission_flag = msg.data
+
+# Frome gimbal encoder
 rospy.Subscriber("/encoder_angles", Point, callBackGimbalAngle,queue_size=1)
+
+# From move_drone
+rospy.Subscriber('/missionTogimbal', Int32, mission_callback)
 
 gimbal_angle = Point()
 gimbal_angle.z = -1
@@ -121,29 +132,16 @@ pitch_pwm = 1495
 yaw_min, yaw_max = 1000, 2000
 pitch_min, pitch_max = 2000, 1000
 
-
 image_width = 640
 image_height = 480
-
-# missionToDrone_pub = rospy.Publisher('/missionToDrone', Int32, queue_size=10)
-
-mission_flag = -1
-
-
-def mission_callback(msg):
-    global mission_flag
-    mission_flag = msg.data
-
-
-rospy.Subscriber('/missionTogimbal', Int32, mission_callback)
 
 def show_image(img):
     cv2.imshow("Image Window", img)   
     cv2.waitKey(1)
 
 def center_callback(msg):
-
     global command_service
+    global command_flag
     global gimbal_pitch_pid
     global gimbal_yaw_pid
 
@@ -188,13 +186,13 @@ def center_callback(msg):
     print(f"Yaw PWM: {yaw_pwm}, Pitch PWM: {pitch_pwm}")
 
     # Break the loop if target is near center (within tolerance)
-    print(yaw_error,":::",pitch_error)
+    # print(yaw_error,":::",pitch_error)
     if abs(yaw_error) < 3:
         yaw_pwm = 1495
     if abs(yaw_error) < 3 and abs(pitch_error) < 3:
         print("Target centered.")
 
-    if gimbal_angle.y >= 70.0: # if gimbal pitch angle is 90 degrees
+    if gimbal_angle.y >= 50.0: # if gimbal pitch angle is 90 degrees
         pitch_pwm = 1495
         yaw_pwm = 1495
         print("downward")
@@ -207,14 +205,15 @@ def center_callback(msg):
  #       pass
  #   elif abs(yaw_pwm - 1495) < 65:
   #      yaw_pwm = 1495 + (70 if yaw_pwm > 1495 else -60)
-
 #    pitch_pwm = 1560
-    if mission_flag == 2:
+
+    if mission_flag == 2: # go to destination
+        # fix yaw angle
         output_yaw = 1495
     elif mission_flag == 3: # fixed gimbal and align horizontal
-        output_picth = output_yaw = 1495
-    
+        output_picth = output_yaw = 1495  
 
+    # Send pwm values to gimbal
     command_service(
             broadcast=False,
             command=183,  # MAV_CMD_DO_SET_SERVO
@@ -226,7 +225,7 @@ def center_callback(msg):
             param6=0,
             param7=0
         )
-#    yaw_pwm = 1445
+
     command_service(
             broadcast=False,
             command=183,  # MAV_CMD_DO_SET_SERVO
@@ -238,6 +237,7 @@ def center_callback(msg):
             param6=0,
             param7=0
         )
+    
     # if abs(yaw_error) < 3:
     #   output_yaw = 0.0
 
@@ -248,12 +248,7 @@ def center_callback(msg):
     #     output_picth = output_yaw = 0
 
     # # go to destination
-
-    
-
-
     # gimbal_angle.z = detect_flag
-
     # gimbal_angle_pub.publish(gimbal_angle)
 
 center_sub = rospy.Subscriber('center_of_image', Point, center_callback,queue_size=1)

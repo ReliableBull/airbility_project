@@ -82,7 +82,6 @@ class MoveDrone:
         # Initialize ROS Service
         self.arm_service = rospy.ServiceProxy('/mavros/cmd/arming', CommandBool)
         self.flight_mode_service = rospy.ServiceProxy('/mavros/set_mode', SetMode)
-
         self.gimbal_angle_sub = rospy.Subscriber("/angle_of_gimbal", Point, self.callBackGimbalAngle)
         self.center_sub = rospy.Subscriber('center_of_image', Point, self.center_callback)
         
@@ -299,23 +298,17 @@ class MoveDrone:
         rospy.loginfo("Moving Drone")
 
         rate = rospy.Rate(30)
+
+        # align yaw of drone
         self.flag = 1
         alignYawCnt = 0
         arrivalCnt = 0
         # 1: global
         # 8 : BODYFRAME
         self.change_mav_frame(1)
-
+        stop_cnt = 0
         while not rospy.is_shutdown():
-            # f = open('./current_lat.txt', 'a')
-            # f1 = open('./current_lng.txt', 'a')
 
-            # f2 = open('./target_lat.txt', 'a')
-            # f3 = open('./target_lng.txt', 'a')
-            # if self.current_pose is None:
-            #     rospy.loginfo("Waiting for pose update...")
-            #     continue
-            
             if self.current_global_position is None:
                 rospy.loginfo("Waiting for global position update...")
                 continue
@@ -341,37 +334,11 @@ class MoveDrone:
 
             # 이동 방향(베어링) 계산
             bearing = self.calculate_bearing(pointB, pointA)
-           
-            # print(pointA)
-            # print(pointB)
-            # print("bearing : " , bearing)
             
             # # 이동 방향 반대쪽 3m 지점 좌표 계산
             destination_point = self.calculate_destination_coordinate(pointB, bearing, 0)
 
-            # 타겟과 현재 드론의 거리 추출
-            # diff_distance = geodesic((self.prev_target_lat , self.prev_target_lng), (self.target_lat , self.target_lng)).meters
-             #if(diff_distance > 1.5):                        
-            
-            #if diff_distance != 0.0:
-                #print(diff_distance)
-
-            # 타겟의 이전 좌표와 현재 좌표의 움직임의 차이가 1.0m 보다 크다면 목표점 갱신
-            #if self.prev_target_lat != self.target_lat and  diff_distance > 1.5 :
-            #if diff_distance > 1.5 :
-            # if self.prev_target_lat != self.target_lat:
-            #     self.destination = destination_point
-            # self.destination = destination_point
-                
-            # if self.destination == None:
-                # print("@@@")
-                # continue
-
             x_error , y_error = self.distance_on_xy(pointB[0] , pointB[1]  ,self.current_global_position.latitude, self.current_global_position.longitude)
-
-
-            # self.prev_target_lat = self.target_lat
-            # self.prev_target_lng = self.target_lng
 
             # 헤딩각을 위한 계산
             diff_angle = self.calcAngle(self.current_global_position.latitude, self.current_global_position.longitude,self.target_lat , self.target_lng )
@@ -379,18 +346,6 @@ class MoveDrone:
             # 타겟과 현재 드론의 거리 추출
             diff_distance = geodesic((self.current_global_position.latitude , self.current_global_position.longitude) , (self.target_lat,self.target_lng)).meters
             
-            # print("현재 거리 : " , diff_distance)
-            # f.write(str(self.current_global_position.latitude)+'\n')
-            # f1.write(str(self.current_global_position.longitude)+'\n')
-
-            # f2.write(str(self.target_lat)+'\n')
-            # f3.write(str(self.target_lng)+'\n')
-
-            #    # 파일 닫기
-            # f2.close()
-            # f3.close()
-
-            #print(x_error , y_error)
             height_error = (self.start_height +(self.current_global_position.altitude-self.start_height)) - self.current_global_position.altitude 
 
             height_output = self.height_pid.update(int(height_error))
@@ -399,95 +354,55 @@ class MoveDrone:
             x_output = self.x_pid.update(x_error)
             y_output = self.y_pid.update(y_error)
 
-            #z_output = self.z_pid.update( abs(self.yaw - diff_angle))
-            z_output = 0.0
-            
-            # print(self.current_global_position.altitude ,":::", (self.start_height +5.0))
-            
-            # print(height_error)
+            # z_output = 0.0
 
-            # print(height_output)
-            
-           # rospy.loginfo(self.yaw )
-            if self.yaw != None:
-                #rospy.loginfo(self.yaw - diff_angle)
-                if self.yaw - diff_angle < 0:
-                    z_output = -0.3                
-                elif self.yaw - diff_angle > 5:
-                   z_output = 0.3
-                else:
-                   z_output = 0.0
-
-            # self.flag = 3
-            # align yaw
+            # Align yaw
             if self.flag == 1:
-                # self.flag =2
-                #x_output = y_output = 0.0
-                
+                x_output = y_output = 0.0
                 if current_gimbal_yaw != 0.0 and abs(current_gimbal_yaw) < 1.0:
                     alignYawCnt = alignYawCnt + 1
                 else:
                     alignYawCnt = 0.0
-
                 if alignYawCnt > 5:
+                    # Set flag 2
+                    stop_cnt = 0
                     self.flag = 2
                     print("\033[91mDrone yaw alignment complete. \033[0m")
-                    print("\033[91mGo to the destination. \033[0m")
-                    # print("flag 222")
-                    
+                    print("\033[91mGo to the destination. \033[0m")                                       
             elif self.flag == 2: # go to destination
                 yaw_output = 0.0
-                if diff_distance < 2.0:
+                if diff_distance < 2.0: # m
                     arrivalCnt = arrivalCnt + 1
                 else:
-                    arrivalCnt = 0.0
-                
-                if arrivalCnt > 10:
+                    arrivalCnt = 0.
+                if arrivalCnt > 5:
                     print("\033[91mArrived at the destination. \033[0m")
                     self.flag = 3
-                    self.change_mav_frame(8)
-                    print("\033[91mApproaching the destination. \033[0m")
-                    
+                    self.change_mav_frame(8) # change body frame
+                    x_output = y_output = 0.0
+                    print("\033[91mApproaching the destination. \033[0m")              
 
-            elif self.flag == 3:
-                # pass
-                # self.horizontal_y_error = image_width/2 - x 
-                # self.horizontal_x_error =  y - image_height/2  
+            elif self.flag == 4: # Arrive at the destination
+                # Align for target
                 x_output = self.x_pid_horizontal.update(self.horizontal_x_error*0.1)  # drone body frame x-axis
                 y_output = self.y_pid_horizontal.update(self.horizontal_y_error*0.1)  # drone body frame y-axis
-                # height_output = self.height_pid_horizontal.update(1.0)
                 
                 if abs(self.horizontal_x_error) > 10 or abs(self.horizontal_y_error > 10):
-                    # print("horizontal align")
+                    print("Align again")
                     height_output = 0.0
                 else:
-                    height_output = 0.5
-                
-                # print(self.)    
-                # print(x_output,":::",y_output)
+                    height_output = 0.5                
+
                 y_output = -y_output
-                # x_output = y_output = 0.0
-                # x_output = 1
                 yaw_output = 0.0
-                # if self.current_hegiht < 15.0:
-                    # self.flag = 4
-                    # print("\033[91mFire extinguisher bomb drop. \033[0m")
+                # If altitude of drone is below a threshold
+                if self.current_hegiht < 15.0: # m
+                    self.flag = 5
+                    print("\033[91mFire extinguisher bomb drop. \033[0m")
             else: # DONE
                 x_output = y_output = yaw_output = 0.0
-                height_output = -1.0 # down speed
-
-
-
-            # print("flag : ", self.flag)
-
-
-
-            self.mission_pub.publish(self.flag)
-            z_output = 0.0
-            #print(z_output)
-            #print(x_output , y_output)
-            # Publish Velocity
-            x_output = y_output = 0.0            
+                height_output = -0.5 # up speed
+            
             vel_msg = Twist()
             vel_msg.linear.x = x_output
             vel_msg.linear.y = y_output
@@ -504,10 +419,11 @@ class MoveDrone:
             # - : right
             print(vel_msg)
             self.vel_pub.publish(vel_msg)
-                # 파일 닫기
-            # f.close()
-            # f1.close()
-
+            self.mission_pub.publish(self.flag)    
+            if self.flag == 3:
+                stop_cnt = stop_cnt + 1
+            if stop_cnt > 50: # 1hz
+                self.flag = 4           
             rate.sleep()
 
     # tracking 관련 함수
@@ -521,37 +437,8 @@ class MoveDrone:
         dy = R * (lat2_rad - lat1_rad)
         return dx, dy
     
-    # # get target GPS
-    # def getHtml(self):
-      
-      
-    #     while(True):
-           
- 
-    #         # response = requests.get("http://hajin220.dothome.co.kr/get_gps.php")
-    #         response = requests.get("http://looda42.dothome.co.kr/get_user_gps.php")
-            
-    #         _json = response.json()
-
-    #         #print(_json)
-    #         self.target_lat = float(_json['results'][0]['g_lat'])
-    #         self.target_lng = float(_json['results'][0]['g_lng'])
-            
-            
-    #         # print(float(self.target_lat))
-    #         # print(float(self.target_lng))         
-         
-    #         time.sleep(0.01)
-
-                # 파일에 텍스트 쓰기
 
     def calculate_bearing(self,pointA, pointB):
-        """
-        두 지점 사이의 이동 방향(베어링)을 계산합니다.
-        pointA와 pointB는 (latitude, longitude) 형식의 튜플이어야 합니다.
-        반환값은 방위각(0 ~ 360도)입니다.
-        """
-
         lat1, lon1 = pointA
         lat2, lon2 = pointB
 
@@ -580,14 +467,6 @@ class MoveDrone:
     
     
     def calculate_destination_coordinate(self, start_point, bearing, distance):
-        """
-        시작 지점과 이동 방향(베어링)을 기반으로 지정한 거리만큼 떨어진 새로운 좌표를 계산합니다.
-        start_point: (latitude, longitude) 형식의 시작 지점 좌표
-        bearing: 이동 방향(베어링)
-        distance: 시작 지점에서 이동할 거리 (단위: 미터)
-        반환값: (latitude, longitude) 형식의 새로운 좌표
-        """
-
         # 시작 지점의 위도와 경도 추출
         lat1, lon1 = start_point
 
@@ -598,9 +477,7 @@ class MoveDrone:
         # 새로운 좌표 계산
         lat2 = lat1 + (dx / 111111)  # 1도의 위도 차이는 약 111,111 미터
         lon2 = lon1 + (dy / (111111 * math.cos(math.radians(lat1))))  # 1도의 경도 차이는 약 111,111 * cos(위도) 미터
-
         return lat2, lon2
-
 if __name__ == "__main__":
 
     move_drone = MoveDrone()
@@ -611,5 +488,4 @@ if __name__ == "__main__":
     # Takeoff Drone
     #move_drone.takeoff()
     #rospy.sleep(2.0)
-    
     move_drone.move_drone()
